@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Pro Narzędzie Administratora — NTFS & CD & Użytkownicy
-Rozbudowana zakładka NTFS wzorowana na NTFS Permissions Tools
+Pro Admin Tool — NTFS & CD/DVD & Users
+Advanced NTFS tab inspired by NTFS Permissions Tools
 """
 import sys
 import os
@@ -109,28 +109,28 @@ def centered_cb(checked=False):
 
 
 # ---------------------------------------------------------------------------
-# HELPER: MASKA DOSTĘPU → CZYTELNY TEKST
+# HELPER: ACCESS MASK → HUMAN READABLE TEXT
 # ---------------------------------------------------------------------------
 def mask_to_str(mask: int) -> str:
     if (mask & con.FILE_ALL_ACCESS) == con.FILE_ALL_ACCESS:
-        return "Pełna kontrola"
+        return "Full Control"
     parts = []
     if mask & con.FILE_GENERIC_READ:   parts.append("Odczyt")
     if mask & con.FILE_GENERIC_WRITE:  parts.append("Zapis")
     if mask & con.FILE_GENERIC_EXECUTE: parts.append("Wykonanie")
     if mask & con.DELETE:              parts.append("Usuwanie")
-    if mask & con.READ_CONTROL:        parts.append("Odczyt uprawnień")
-    if mask & con.WRITE_DAC:           parts.append("Zmiana uprawnień")
-    if mask & con.WRITE_OWNER:         parts.append("Zmiana właściciela")
+    if mask & con.READ_CONTROL:        parts.append("Read Permissions")
+    if mask & con.WRITE_DAC:           parts.append("Change Permissions")
+    if mask & con.WRITE_OWNER:         parts.append("Change Owner")
     return ", ".join(parts) if parts else f"Spec. (0x{mask:08X})"
 
 
 
 # ---------------------------------------------------------------------------
-# HELPER: LISTA LOKALNYCH UŻYTKOWNIKÓW
+# HELPER: LOCAL USER LIST
 # ---------------------------------------------------------------------------
 def get_local_users() -> list:
-    """Zwraca listę nazw lokalnych kont i grup systemowych."""
+    """Returns list of local accounts and system groups."""
     SKIP = {"guest", "wdagutilityaccount", "defaultaccount"}
     names = []
     try:
@@ -142,7 +142,7 @@ def get_local_users() -> list:
     except Exception:
         pass
     system_principals = ["Administratorzy", "Administrators", "SYSTEM",
-                         "Użytkownicy", "Users", "Wszyscy", "Everyone"]
+                         "Users", "Users", "Wszyscy", "Everyone"]
     for p in system_principals:
         if p not in names:
             names.append(p)
@@ -152,7 +152,7 @@ def get_local_users() -> list:
 
 def windows_select_user(parent=None) -> str:
     """Otwiera dialog wyboru lokalnego uzytkownika."""
-    dlg = UserPickerDialog(title='Wybierz wlasciciela', multi=False, parent=parent)
+    dlg = UserPickerDialog(title='Select owner', multi=False, parent=parent)
     if dlg.exec() == QtWidgets.QDialog.Accepted and dlg.selected_users:
         return dlg.selected_users[0].strip()
     return ''
@@ -164,12 +164,12 @@ def windows_select_user(parent=None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# DIALOG: WYBÓR UŻYTKOWNIKA Z LISTY
+# DIALOG: USER PICKER
 # ---------------------------------------------------------------------------
 class UserPickerDialog(QtWidgets.QDialog):
-    """Dialog z listą lokalnych kont zamiast pola tekstowego."""
+    """Dialog with list of local accounts instead of text field."""
 
-    def __init__(self, title="Wybierz użytkownika", multi=False, parent=None):
+    def __init__(self, title="Select User", multi=False, parent=None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumSize(420, 480)
@@ -197,10 +197,10 @@ class UserPickerDialog(QtWidgets.QDialog):
         self.list_widget.doubleClicked.connect(self.accept)
 
         btn_row = QtWidgets.QHBoxLayout()
-        btn_ok = QtWidgets.QPushButton("✅ Wybierz")
+        btn_ok = QtWidgets.QPushButton("✅ Select")
         btn_ok.setObjectName("btnBlue")
         btn_ok.clicked.connect(self.accept)
-        btn_cancel = QtWidgets.QPushButton("Anuluj")
+        btn_cancel = QtWidgets.QPushButton("Cancel")
         btn_cancel.clicked.connect(self.reject)
         btn_row.addStretch()
         btn_row.addWidget(btn_ok)
@@ -228,7 +228,7 @@ class UserPickerDialog(QtWidgets.QDialog):
 
 
 # ---------------------------------------------------------------------------
-# HELPER: ZMIANA WŁAŚCICIELA Z PRZYWILEJAMI
+# HELPER: CHANGE OWNER WITH PRIVILEGES
 # ---------------------------------------------------------------------------
 def enable_privilege(priv_name: str) -> bool:
     try:
@@ -281,7 +281,7 @@ def set_owner_with_privileges(path: str, new_sid) -> None:
             hToken, False, ctypes.byref(tp), 0, None, None)
         kernel.CloseHandle(hToken)
 
-    for p in ("SeTakeOwnershipPrivilege", "SeRestorePrivilege", "SeBackupPrivilege"):
+    for p in ("SeYeseOwnershipPrivilege", "SeRestorePrivilege", "SeBackupPrivilege"):
         _enable_priv(p)
 
     # Konwertuj pywin32 SID na bytes
@@ -303,7 +303,7 @@ def set_owner_with_privileges(path: str, new_sid) -> None:
 
     # Fallback: pywin32
     try:
-        enable_privilege("SeTakeOwnershipPrivilege")
+        enable_privilege("SeYeseOwnershipPrivilege")
         enable_privilege("SeRestorePrivilege")
         enable_privilege("SeBackupPrivilege")
         win32security.SetNamedSecurityInfo(
@@ -328,17 +328,17 @@ def set_owner_with_privileges(path: str, new_sid) -> None:
 
 def secure_home_folder(path: str, user_login: str) -> None:
     """
-    Ustawia ACL folderu domowego: dostęp WYŁĄCZNIE dla właściciela + SYSTEM.
-    Usuwa dziedziczenie, blokuje dostęp dla Użytkownicy/Everyone.
+    Sets home folder ACL: access ONLY for owner + SYSTEM.
+    Removes inheritance, blocks access for Users/Everyone.
     """
-    enable_privilege("SeTakeOwnershipPrivilege")
+    enable_privilege("SeYeseOwnershipPrivilege")
     enable_privilege("SeRestorePrivilege")
     enable_privilege("SeBackupPrivilege")
 
     try:
         user_sid, _, _ = win32security.LookupAccountName(None, user_login)
     except Exception:
-        return  # Konto jeszcze nie istnieje — nie ustawiaj ACL
+        return  # Account jeszcze nie istnieje — nie ustawiaj ACL
 
     try:
         system_sid = win32security.CreateWellKnownSid(
@@ -346,21 +346,21 @@ def secure_home_folder(path: str, user_login: str) -> None:
     except Exception:
         system_sid, _, _ = win32security.LookupAccountName(None, "SYSTEM")
 
-    # Nowy DACL — tylko właściciel (pełna kontrola) + SYSTEM (pełna kontrola)
+    # New DACL — owner only (full control) + SYSTEM (full control)
     new_dacl = win32security.ACL()
     new_dacl.AddAccessAllowedAce(
         win32security.ACL_REVISION, ntsecuritycon.FILE_ALL_ACCESS, user_sid)
     new_dacl.AddAccessAllowedAce(
         win32security.ACL_REVISION, ntsecuritycon.FILE_ALL_ACCESS, system_sid)
 
-    # Zastosuj bez dziedziczenia (PROTECTED_DACL = wyłącz dziedziczenie od rodzica)
+    # Apply without inheritance (PROTECTED_DACL = disable parent inheritance)
     win32security.SetNamedSecurityInfo(
         path,
         win32security.SE_FILE_OBJECT,
         win32security.DACL_SECURITY_INFORMATION |
         win32security.OWNER_SECURITY_INFORMATION |
         win32security.PROTECTED_DACL_SECURITY_INFORMATION,
-        user_sid,   # ustaw właściciela
+        user_sid,   # set owner
         None,
         new_dacl,
         None
@@ -398,7 +398,7 @@ class AdvancedSecurityDialog(QtWidgets.QDialog):
         lay = QtWidgets.QVBoxLayout(self)
         lay.setSpacing(6)
 
-        # Nagłówek — Object name + Owner w jednym wierszu
+        # Header — Object name + Owner in one row
         hdr = QtWidgets.QFormLayout()
         hdr.setHorizontalSpacing(10)
         self.lbl_object = QtWidgets.QLineEdit(self.path)
@@ -409,7 +409,7 @@ class AdvancedSecurityDialog(QtWidgets.QDialog):
         hdr.addRow("Current Owner:", self.lbl_owner)
         lay.addLayout(hdr)
 
-        # ── Tabela ACE: Type | Principal | Allow | Deny | Inherited From | Apply to | Usuń ──
+        # ── Tabela ACE: Type | Principal | Allow | Deny | Inherited From | Apply to | Remove ──
         self.ace_table = QtWidgets.QTableWidget(0, 7)
         self.ace_table.setHorizontalHeaderLabels([
             "Type", "Principal", "Allow", "Deny", "Inherited From", "Apply to", ""])
@@ -425,10 +425,10 @@ class AdvancedSecurityDialog(QtWidgets.QDialog):
         self.ace_table.setAlternatingRowColors(True)
         lay.addWidget(self.ace_table, 1)
 
-        # ── Dodaj użytkownika ─────────────────────────────────────────────
-        add_frame = QtWidgets.QGroupBox("Dodaj uprawnienie")
+        # ── Add user ───────────────────────────────────────────────────
+        add_frame = QtWidgets.QGroupBox("Add Permission")
         add_lay = QtWidgets.QHBoxLayout(add_frame)
-        add_lay.addWidget(QtWidgets.QLabel("Użytkownik:"))
+        add_lay.addWidget(QtWidgets.QLabel("User:"))
 
         self.add_user_combo = QtWidgets.QComboBox()
         self.add_user_combo.setMinimumWidth(180)
@@ -437,19 +437,19 @@ class AdvancedSecurityDialog(QtWidgets.QDialog):
 
         btn_reload_u = QtWidgets.QPushButton("🔄")
         btn_reload_u.setFixedWidth(32)
-        btn_reload_u.setToolTip("Odśwież listę kont")
+        btn_reload_u.setToolTip("Refresh account list")
         btn_reload_u.clicked.connect(self._reload_user_combo)
         add_lay.addWidget(btn_reload_u)
 
-        add_lay.addWidget(QtWidgets.QLabel("Dostęp:"))
+        add_lay.addWidget(QtWidgets.QLabel("Access:"))
         self.add_access_combo = QtWidgets.QComboBox()
         self.add_access_combo.addItems([
-            "Pełna kontrola",
+            "Full Control",
             "Odczyt",
             "Odczyt i wykonanie",
             "Zapis",
             "Odczyt + Zapis",
-            "Deny — Pełna blokada",
+            "Deny — Full Block",
         ])
         add_lay.addWidget(self.add_access_combo)
 
@@ -459,7 +459,7 @@ class AdvancedSecurityDialog(QtWidgets.QDialog):
         self.add_apply_combo.setCurrentIndex(1)
         add_lay.addWidget(self.add_apply_combo)
 
-        btn_add = QtWidgets.QPushButton("➕ Dodaj")
+        btn_add = QtWidgets.QPushButton("➕ Add")
         btn_add.setObjectName("btnGreen")
         btn_add.clicked.connect(self._add_ace_from_combo)
         add_lay.addWidget(btn_add)
@@ -488,7 +488,7 @@ class AdvancedSecurityDialog(QtWidgets.QDialog):
         btn_cancel = QtWidgets.QPushButton("Cancel")
         btn_cancel.clicked.connect(self.reject)
 
-        # Aktywuj Apply gdy coś zmieniono
+        # Activate Apply when something changed
         self.ace_table.itemChanged.connect(lambda: self.btn_apply.setEnabled(True))
 
         btn_row.addWidget(self.btn_change_owner)
@@ -534,14 +534,14 @@ class AdvancedSecurityDialog(QtWidgets.QDialog):
                     win32security.ACCESS_DENIED_OBJECT_ACE_TYPE
                 ]
                 is_inherited = bool(header[1] & win32security.INHERITED_ACE)
-                # Skąd dziedziczone — rodzic lub ten obiekt
+                # Inheritance source — parent or this object
                 inherited_from = os.path.dirname(self.path) if is_inherited else ""
 
                 self._insert_ace_row(principal, sid, mask, is_deny,
                                      is_inherited, inherited_from)
         except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Błąd",
-                f"Nie można wczytać uprawnień:\n{e}")
+            QtWidgets.QMessageBox.warning(self, "Error",
+                f"Cannot read permissions:\n{e}")
 
     def _insert_ace_row(self, principal: str, sid, mask: int,
                         is_deny: bool, is_inherited: bool,
@@ -593,7 +593,7 @@ class AdvancedSecurityDialog(QtWidgets.QDialog):
         apply_combo.currentIndexChanged.connect(lambda _: self.btn_apply.setEnabled(True))
         self.ace_table.setCellWidget(row, 5, apply_combo)
 
-        # Kol 6: Usuń
+        # Kol 6: Remove
         btn_del = QtWidgets.QPushButton("✕")
         btn_del.setObjectName("btnRed")
         btn_del.setFixedWidth(32)
@@ -649,7 +649,7 @@ class AdvancedSecurityDialog(QtWidgets.QDialog):
             self.btn_apply.setEnabled(True)
         except Exception as e:
             QtWidgets.QMessageBox.warning(
-                self, "Błąd", f"Nie można znaleźć konta \'{name}\':\n{e}")
+                self, "Error", f"Cannot find account \'{name}\':\n{e}")
 
     def _apply(self):
         enable_privilege("SeRestorePrivilege")
@@ -675,11 +675,11 @@ class AdvancedSecurityDialog(QtWidgets.QDialog):
 
             self.btn_apply.setEnabled(False)
             QtWidgets.QMessageBox.information(self, "OK",
-                "Uprawnienia zostały zastosowane.")
+                "Permissions have been applied.")
             self._load()
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Błąd",
-                f"Nie można zastosować uprawnień:\n{e}")
+            QtWidgets.QMessageBox.critical(self, "Error",
+                f"Cannot apply permissions:\n{e}")
 
     def _on_ok(self):
         if self.btn_apply.isEnabled():
@@ -695,15 +695,15 @@ class AdvancedSecurityDialog(QtWidgets.QDialog):
             new_sid, _, _ = win32security.LookupAccountName(None, name)
             set_owner_with_privileges(self.path, new_sid)
             QtWidgets.QMessageBox.information(
-                self, "OK", f"Właściciel zmieniony na: {name}")
+                self, "OK", f"Owner changed to: {name}")
             self._load()
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Błąd",
-                f"Nie można zmienić właściciela:\n{e}")
+            QtWidgets.QMessageBox.critical(self, "Error",
+                f"Cannot change owner:\n{e}")
 
 
 # ===========================================================================
-# DIALOG: OPTIONS — Allow/ReadOnly/Deny z listą użytkowników i Apply To
+# DIALOG: OPTIONS — Allow/ReadOnly/Deny with user list and Apply To
 # ===========================================================================
 class AccessOptionsDialog(QtWidgets.QDialog):
     """Dialog 'Options' wzorowany na NTFS Permissions Tools."""
@@ -736,7 +736,7 @@ class AccessOptionsDialog(QtWidgets.QDialog):
         lay = QtWidgets.QVBoxLayout(self)
         lay.setSpacing(12)
 
-        # ── Wybór użytkownika ────────────────────────────────────────────
+        # ── User selection ──────────────────────────────────────────────
         name_row = QtWidgets.QHBoxLayout()
         name_row.addWidget(QtWidgets.QLabel("Name:"))
         self.user_combo = QtWidgets.QComboBox()
@@ -746,7 +746,7 @@ class AccessOptionsDialog(QtWidgets.QDialog):
         name_row.addWidget(self.user_combo, 1)
         btn_reload = QtWidgets.QPushButton("🔄")
         btn_reload.setFixedWidth(32)
-        btn_reload.setToolTip("Odśwież listę")
+        btn_reload.setToolTip("Refresh list")
         btn_reload.clicked.connect(self._reload_users)
         name_row.addWidget(btn_reload)
         lay.addLayout(name_row)
@@ -805,10 +805,10 @@ class AccessOptionsDialog(QtWidgets.QDialog):
 
 
 # ===========================================================================
-# ZAKŁADKA NTFS — główna lista plików/folderów
+# NTFS TAB — main file/folder list
 # ===========================================================================
 class NtfsTab(QtWidgets.QWidget):
-    """Zakładka NTFS z listą plików, paskiem narzędzi i kolumnami jak na screenshocie."""
+    """NTFS tab with file list, toolbar and columns."""
 
     def __init__(self, log_fn, parent=None):
         super().__init__(parent)
@@ -822,7 +822,7 @@ class NtfsTab(QtWidgets.QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(6)
 
-        # ── PASEK NARZĘDZI ──────────────────────────────────────────────────
+        # ── TOOLBAR ─────────────────────────────────────────────────────────
         toolbar = QtWidgets.QHBoxLayout()
         toolbar.setSpacing(4)
 
@@ -859,7 +859,7 @@ class NtfsTab(QtWidgets.QWidget):
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
-        # ── PASEK ŚCIEŻKI ──────────────────────────────────────────────────
+        # ── PATH BAR ────────────────────────────────────────────────────────
         path_row = QtWidgets.QHBoxLayout()
         self.drive_combo = QtWidgets.QComboBox()
         self.drive_combo.setFixedWidth(130)
@@ -868,11 +868,11 @@ class NtfsTab(QtWidgets.QWidget):
         path_row.addWidget(self.drive_combo)
 
         self.path_edit = QtWidgets.QLineEdit()
-        self.path_edit.setPlaceholderText("Ścieżka folderu...")
+        self.path_edit.setPlaceholderText("Folder path...")
         self.path_edit.returnPressed.connect(lambda: self._load_path(self.path_edit.text()))
         path_row.addWidget(self.path_edit, 1)
 
-        btn_up = QtWidgets.QPushButton("⬆ Wyżej")
+        btn_up = QtWidgets.QPushButton("⬆ Up")
         btn_up.clicked.connect(self._go_up)
         btn_refresh = QtWidgets.QPushButton("🔄")
         btn_refresh.setFixedWidth(36)
@@ -881,7 +881,7 @@ class NtfsTab(QtWidgets.QWidget):
         path_row.addWidget(btn_refresh)
         layout.addLayout(path_row)
 
-        # ── TABELA PLIKÓW/FOLDERÓW ─────────────────────────────────────────
+        # ── FILE/FOLDER TABLE ───────────────────────────────────────────────
         self.file_table = QtWidgets.QTableWidget(0, 6)
         self.file_table.setHorizontalHeaderLabels([
             "Name", "Type", "Date created", "File system",
@@ -952,13 +952,13 @@ class NtfsTab(QtWidgets.QWidget):
         if path:
             self._load_path(path.replace("/", "\\"))
 
-    # ── ŁADOWANIE ZAWARTOŚCI KATALOGU ─────────────────────────────────────
+    # ── LOADING DIRECTORY CONTENTS ───────────────────────────────────────
     def _load_path(self, path: str):
         if not path:
             return
         path = path.replace("/", "\\")
         if not os.path.exists(path):
-            self._log(f"Ścieżka nie istnieje: {path}", "#ff7b72")
+            self._log(f"Path does not exist: {path}", "#ff7b72")
             return
 
         self._current_path = path
@@ -967,15 +967,15 @@ class NtfsTab(QtWidgets.QWidget):
 
         try:
             entries = []
-            # Jeśli to dysk (root), dodaj wszystkie podfoldery i pliki
+            # If root drive, add all subfolders and files
             for name in os.listdir(path):
                 full = os.path.join(path, name)
                 entries.append((name, full))
         except PermissionError:
-            self._log(f"Brak uprawnień do odczytu: {path}", "#e3b341")
+            self._log(f"No read permissions: {path}", "#e3b341")
             return
         except Exception as e:
-            self._log(f"Błąd listowania: {e}", "#ff7b72")
+            self._log(f"Error listowania: {e}", "#ff7b72")
             return
 
         # Sortuj: foldery najpierw, potem pliki, alfanumerycznie
@@ -985,10 +985,10 @@ class NtfsTab(QtWidgets.QWidget):
             self._add_entry_row(name, full)
 
         self._update_status()
-        self._log(f"Załadowano: {path} ({len(entries)} elementów)")
+        self._log(f"Loaded: {path} ({len(entries)} items)")
 
     def _add_entry_row(self, name: str, full_path: str):
-        """Dodaje jeden wiersz do tabeli."""
+        """Adde jeden wiersz do tabeli."""
         is_dir = os.path.isdir(full_path)
 
         row = self.file_table.rowCount()
@@ -1001,7 +1001,7 @@ class NtfsTab(QtWidgets.QWidget):
         self.file_table.setItem(row, 0, name_item)
 
         # Typ
-        type_str = "Folder plików" if is_dir else "Plik"
+        type_str = "Folder" if is_dir else "File"
         self.file_table.setItem(row, 1, QtWidgets.QTableWidgetItem(type_str))
 
         # Data utworzenia
@@ -1012,23 +1012,23 @@ class NtfsTab(QtWidgets.QWidget):
             date_str = "—"
         self.file_table.setItem(row, 2, QtWidgets.QTableWidgetItem(date_str))
 
-        # System plików — sprawdź typ napędu
+        # File system — check drive type
         fs_str = self._get_fs(full_path)
         self.file_table.setItem(row, 3, QtWidgets.QTableWidgetItem(fs_str))
 
-        # Prawa dostępu bieżącego użytkownika
+        # Current user access rights
         access_str, access_color, allowed = self._get_access(full_path)
         access_item = QtWidgets.QTableWidgetItem(f"  {access_str}")
         access_item.setForeground(QtGui.QColor(access_color))
         self.file_table.setItem(row, 4, access_item)
 
-        # Właściciel
+        # Owner
         owner_str = self._get_owner(full_path)
         owner_item = QtWidgets.QTableWidgetItem(owner_str)
         owner_item.setForeground(QtGui.QColor("#8b949e"))
         self.file_table.setItem(row, 5, owner_item)
 
-        # Kolor wiersza jeśli brak dostępu
+        # Row color if no access
         if not allowed:
             for col in range(6):
                 item = self.file_table.item(row, col)
@@ -1044,9 +1044,9 @@ class NtfsTab(QtWidgets.QWidget):
             return "—"
 
     def _get_access(self, path: str):
-        """Sprawdza prawa bieżącego użytkownika przez AccessCheck."""
+        """Checks current user rights via AccessCheck."""
         try:
-            # Pobierz token bieżącego procesu
+            # Get current process token
             token = win32security.OpenProcessToken(
                 win32api.GetCurrentProcess(),
                 win32security.TOKEN_QUERY | win32security.TOKEN_DUPLICATE)
@@ -1058,7 +1058,7 @@ class NtfsTab(QtWidgets.QWidget):
                 win32security.DACL_SECURITY_INFORMATION |
                 win32security.OWNER_SECURITY_INFORMATION |
                 win32security.GROUP_SECURITY_INFORMATION)
-            # Sprawdź dostęp do odczytu
+            # Check read access
             granted, result = win32security.AccessCheck(
                 sd, imp_token,
                 con.FILE_GENERIC_READ,
@@ -1093,16 +1093,16 @@ class NtfsTab(QtWidgets.QWidget):
             try:
                 name, domain, _ = win32security.LookupAccountSid(None, owner_sid)
                 name, domain, _ = win32security.LookupAccountSid(None, owner_sid)
-                # Zwróć domain backslash name dla kont lokalnych
+                # Return domain backslash name for local accounts
                 return (domain + chr(92) + name) if domain else name
             except Exception:
-                # SID nierozpoznany — zwróć string SID
+                # Unrecognized SID — return string SID
                 try:
                     return win32security.ConvertSidToStringSid(owner_sid)
                 except Exception:
                     return "?"
         except PermissionError:
-            return "(brak dostępu)"
+            return "(no access)"
         except Exception:
             return "—"
 
@@ -1135,7 +1135,7 @@ class NtfsTab(QtWidgets.QWidget):
         act_owner   = menu.addAction("👤  Change Owner")
         act_advanced = menu.addAction("⚙   Advanced Security Settings")
         menu.addSeparator()
-        act_refresh = menu.addAction("🔄  Odśwież")
+        act_refresh = menu.addAction("🔄  Refresh")
 
         act_allow.triggered.connect(lambda: self._set_access_quick("allow"))
         act_readonly.triggered.connect(lambda: self._set_access_quick("readonly"))
@@ -1162,10 +1162,10 @@ class NtfsTab(QtWidgets.QWidget):
         paths = self._get_selected_paths()
         if not paths:
             QtWidgets.QMessageBox.information(self, "Info",
-                "Zaznacz pliki/foldery na liście, a następnie kliknij operację.")
+                "Select files/folders from the list, then click an operation.")
             return
 
-        # Otwórz dialog Options z listą użytkowników i Apply To
+        # Open Options dialog with user list and Apply To
         dlg = AccessOptionsDialog(mode, paths, parent=self)
         if dlg.exec() != QtWidgets.QDialog.Accepted or not dlg.selected_user:
             return
@@ -1177,7 +1177,7 @@ class NtfsTab(QtWidgets.QWidget):
         mode_names = {"allow": "Allow Access", "readonly": "Read Only", "deny": "Deny Access"}
         ok_count = 0
 
-        # Zbierz ścieżki do przetworzenia (z podfolderami jeśli recurse)
+        # Collect paths to process (with subfolders if recurse)
         all_paths = []
         for path in paths:
             all_paths.append(path)
@@ -1203,7 +1203,7 @@ class NtfsTab(QtWidgets.QWidget):
                 dacl = sd.GetSecurityDescriptorDacl() or win32security.ACL()
                 new_dacl = win32security.ACL()
 
-                # Przepisz istniejące ACE (bez docelowego SID — unikamy duplikatów)
+                # Rewrite existing ACEs (without target SID — avoid duplicates)
                 for i in range(dacl.GetAceCount()):
                     ace = dacl.GetAce(i)
                     hdr, ace_mask, ace_sid = ace
@@ -1216,7 +1216,7 @@ class NtfsTab(QtWidgets.QWidget):
                             new_dacl.AddAccessAllowedAce(
                                 win32security.ACL_REVISION, ace_mask, ace_sid)
 
-                # Dodaj nowe ACE dla wybranego użytkownika
+                # Add new ACE for selected user
                 if mode == "allow":
                     new_dacl.AddAccessAllowedAce(
                         win32security.ACL_REVISION, con.FILE_ALL_ACCESS, target_sid)
@@ -1235,11 +1235,11 @@ class NtfsTab(QtWidgets.QWidget):
                     None, None, new_dacl, None)
                 ok_count += 1
             except Exception as e:
-                self._log(f"Błąd dla {os.path.basename(path)}: {e}", "#ff7b72")
+                self._log(f"Error dla {os.path.basename(path)}: {e}", "#ff7b72")
 
         self._log(
-            f"Zastosowano '{mode_names[mode]}' [{apply_to}] dla użytkownika '{target}' "
-            f"— {ok_count}/{len(all_paths)} elementów.", "#7ee787")
+            f"Applied '{mode_names[mode]}' [{apply_to}] for user '{target}' "
+            f"— {ok_count}/{len(all_paths)} items.", "#7ee787")
         self._load_path(self._current_path)
 
     def _change_owner_quick(self):
@@ -1255,11 +1255,11 @@ class NtfsTab(QtWidgets.QWidget):
         # Jesli zwrocono KOMPUTER\login — wyodrebnij sam login dla LookupAccountName
         # (LookupAccountName akceptuje oba formaty)
 
-        # Lookupname — pobierz SID raz przed pętlą
+        # Lookupname — get SID once before the loop
         try:
             new_sid, _, _ = win32security.LookupAccountName(None, name)
         except Exception as e:
-            self._log(f"Nie można znaleźć konta '{name}': {e}", "#ff7b72")
+            self._log(f"Cannot find account '{name}': {e}", "#ff7b72")
             return
 
         ok_count = 0
@@ -1268,19 +1268,19 @@ class NtfsTab(QtWidgets.QWidget):
                 set_owner_with_privileges(path, new_sid)
                 enable_privilege("SeBackupPrivilege")
                 enable_privilege("SeRestorePrivilege")
-                # set_owner_with_privileges już weryfikuje wewnętrznie
-                self._log(f"Właściciel zmieniony na '{name}' [{os.path.basename(path)}]", "#7ee787")
+                # set_owner_with_privileges already verifies internally
+                self._log(f"Owner changed to '{name}' [{os.path.basename(path)}]", "#7ee787")
                 ok_count += 1
             except Exception as e:
-                self._log(f"Błąd zmiany właściciela {os.path.basename(path)}: {e}", "#ff7b72")
+                self._log(f"Error changing owner {os.path.basename(path)}: {e}", "#ff7b72")
 
-        self._log(f"Zmiana właściciela zakończona: {ok_count}/{len(paths)} elementów.", "#7ee787")
+        self._log(f"Change Owner complete: {ok_count}/{len(paths)} items.", "#7ee787")
         self._load_path(self._current_path)
 
     def _open_advanced(self):
         paths = self._get_selected_paths()
         if not paths:
-            # Jeśli nic nie zaznaczono — otwórz dla bieżącego katalogu
+            # If nothing selected — open for current directory
             path = self._current_path
         else:
             path = paths[0]
@@ -1294,7 +1294,7 @@ class NtfsTab(QtWidgets.QWidget):
 
 
 # ===========================================================================
-# GŁÓWNA APLIKACJA
+# MAIN APPLICATION
 # ===========================================================================
 class AdminTool(QtWidgets.QMainWindow):
     # Per-user: HKCU (lub HKU\SID) - dziala natychmiast bez gpupdate
@@ -1305,7 +1305,7 @@ class AdminTool(QtWidgets.QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Pro Narzędzie Administratora — NTFS & CD & Użytkownicy")
+        self.setWindowTitle("Pro Admin Tool — NTFS & CD/DVD & Users")
         self.setMinimumSize(1400, 900)
         self.is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
         self._cd_row_data = []
@@ -1322,14 +1322,14 @@ class AdminTool(QtWidgets.QMainWindow):
         root.setSpacing(6)
         self._build_status_bar(root)
 
-        # LOG musi być stworzony PRZED zakładkami, bo NtfsTab wywołuje _log przy inicjalizacji
-        log_group = QtWidgets.QGroupBox("LOG ZDARZEŃ")
+        # LOG must be created BEFORE tabs, because NtfsTab calls _log during initizacji
+        log_group = QtWidgets.QGroupBox("EVENT LOG")
         log_layout = QtWidgets.QVBoxLayout(log_group)
         self.log = QtWidgets.QTextEdit()
         self.log.setReadOnly(True)
         self.log.setFixedHeight(105)
         btn_row = QtWidgets.QHBoxLayout()
-        btn_clear = QtWidgets.QPushButton("Wyczyść log")
+        btn_clear = QtWidgets.QPushButton("Clear log")
         btn_clear.setFixedWidth(120)
         btn_clear.clicked.connect(self.log.clear)
         btn_row.addStretch()
@@ -1350,13 +1350,13 @@ class AdminTool(QtWidgets.QMainWindow):
 
     def _build_status_bar(self, parent_layout):
         bar = QtWidgets.QHBoxLayout()
-        icon = "✅ TRYB ADMINISTRATORA" if self.is_admin else "⚠️ BRAK UPRAWNIEŃ ADMINISTRATORA"
+        icon = "✅ ADMINISTRATOR MODE" if self.is_admin else "⚠️ NO ADMINISTRATOR PRIVILEGES"
         color = "#2ea043" if self.is_admin else "#e3b341"
         status = QtWidgets.QLabel(icon)
         status.setStyleSheet(
             f"color: {color}; font-weight: bold; padding: 4px 8px;"
             f"background: {color}22; border-radius: 4px;")
-        btn_refresh = QtWidgets.QPushButton("🔄 Odśwież wszystko")
+        btn_refresh = QtWidgets.QPushButton("🔄 Refresh all")
         btn_refresh.setObjectName("btnBlue")
         btn_refresh.clicked.connect(self.refresh_all)
         bar.addWidget(status)
@@ -1365,14 +1365,14 @@ class AdminTool(QtWidgets.QMainWindow):
         parent_layout.addLayout(bar)
 
     # ===========================
-    # ZAKŁADKA NTFS
+    # NTFS TAB
     # ===========================
     def _build_tab_ntfs(self):
         self.ntfs_tab = NtfsTab(log_fn=self._log)
-        self.tabs.addTab(self.ntfs_tab, "🔒  NTFS — Uprawnienia")
+        self.tabs.addTab(self.ntfs_tab, "🔒  NTFS — Permissions")
 
     # ===========================
-    # ZAKŁADKA CD/DVD
+    # CD/DVD TAB
     # ===========================
     def _build_tab_cd(self):
         tab = QtWidgets.QWidget()
@@ -1382,13 +1382,13 @@ class AdminTool(QtWidgets.QMainWindow):
         CD_GUID = "{53f56308-b6bf-11d0-94f2-00a0c91efb8b}"
         self._cd_guid        = CD_GUID
         self._cd_deny_types  = ["Deny_Execute", "Deny_Read", "Deny_Write"]
-        self._cd_deny_labels = ["Odmowa wykonywania", "Odmowa odczytu", "Odmowa zapisu"]
+        self._cd_deny_labels = ["Deny Execute", "Deny Read", "Deny Write"]
         self._cd_buttons     = {}
         self._cd_user_rows   = {}
         self._gp_zasady      = list(zip(
-            ["Dysk CD i DVD: odmowa dostępu do wykonywania",
-             "Dysk CD i DVD: odmowa dostępu do odczytu",
-             "Dysk CD i DVD: odmowa praw do zapisu"],
+            ["CD and DVD: Deny Execute Access",
+             "CD and DVD: Deny Read Access",
+             "CD and DVD: Deny Write Access"],
             self._cd_deny_types))
         self._gp_table = None
         self._gp_buttons = {}
@@ -1403,35 +1403,35 @@ class AdminTool(QtWidgets.QMainWindow):
         self._cd_groups_layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._cd_groups_container)
 
-        btn_read = QtWidgets.QPushButton("🔍 Odczytaj z rejestru i Registry.pol")
+        btn_read = QtWidgets.QPushButton("🔍 Read from registry and Registry.pol")
         btn_read.clicked.connect(self._read_cd_policies)
         layout.addWidget(btn_read)
         layout.addStretch()
-        self.tabs.addTab(tab, "💿  CD/DVD — Zasady")
+        self.tabs.addTab(tab, "💿  CD/DVD — Policy")
 
 
     # ===========================
-    # ZAKŁADKA: TWORZENIE KONT
+    # TAB: CREATE ACCOUNTS
     # ===========================
     def _build_tab_users_create(self):
         tab = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(tab)
         layout.setSpacing(10)
 
-        common_group = QtWidgets.QGroupBox("USTAWIENIA WSPÓLNE DLA TWORZONYCH KONT")
+        common_group = QtWidgets.QGroupBox("COMMON SETTINGS FOR NEW ACCOUNTS")
         cg = QtWidgets.QGridLayout(common_group)
 
-        cg.addWidget(QtWidgets.QLabel("Dysk dla folderu domowego:"), 0, 0)
+        cg.addWidget(QtWidgets.QLabel("Home folder drive:"), 0, 0)
         self.drive_combo_users = QtWidgets.QComboBox()
         self._populate_user_drives()
         self.drive_combo_users.setFixedWidth(90)
         cg.addWidget(self.drive_combo_users, 0, 1)
         cg.addWidget(QtWidgets.QLabel("Folder domowy: <dysk>:\\<login>  np. E:\\andrzej.w"), 0, 2)
 
-        cg.addWidget(QtWidgets.QLabel("Hasło dla wszystkich kont:"), 1, 0)
+        cg.addWidget(QtWidgets.QLabel("Password for all accounts:"), 1, 0)
         self.shared_pass = QtWidgets.QLineEdit()
         self.shared_pass.setEchoMode(QtWidgets.QLineEdit.Password)
-        self.shared_pass.setPlaceholderText("Hasło wspólne dla wszystkich tworzonych kont...")
+        self.shared_pass.setPlaceholderText("Shared password for all accounts...")
         cg.addWidget(self.shared_pass, 1, 1, 1, 2)
         btn_eye = QtWidgets.QPushButton("👁")
         btn_eye.setFixedWidth(36)
@@ -1441,26 +1441,26 @@ class AdminTool(QtWidgets.QMainWindow):
         cg.addWidget(btn_eye, 1, 3)
 
         self.cb_force_change = QtWidgets.QCheckBox(
-            "Wymuś zmianę hasła przy pierwszym logowaniu (dla wszystkich tworzonych kont)")
+            "Force password change on first login (for all created accounts)")
         self.cb_force_change.setChecked(True)
         cg.addWidget(self.cb_force_change, 2, 0, 1, 4)
         layout.addWidget(common_group)
 
-        list_group = QtWidgets.QGroupBox("LISTA KONT DO UTWORZENIA")
+        list_group = QtWidgets.QGroupBox("ACCOUNTS TO CREATE")
         ll = QtWidgets.QVBoxLayout(list_group)
         hdr = QtWidgets.QHBoxLayout()
         hdr.addWidget(QtWidgets.QLabel("Konta do utworzenia (podaj loginy):"))
         hdr.addStretch()
         btn_plus = QtWidgets.QPushButton("+")
         btn_plus.setObjectName("btnPlus")
-        btn_plus.setToolTip("Dodaj kolejne konto")
+        btn_plus.setToolTip("Add kolejne konto")
         btn_plus.clicked.connect(self._add_user_row)
         hdr.addWidget(btn_plus)
         ll.addLayout(hdr)
 
         self.users_to_create = QtWidgets.QTableWidget(0, 4)
         self.users_to_create.setHorizontalHeaderLabels(
-            ["Login", "Typ konta", "Folder domowy (podgląd)", "Usuń"])
+            ["Login", "Account Type", "Home folder (preview)", "Remove"])
         self.users_to_create.horizontalHeader().setSectionResizeMode(
             0, QtWidgets.QHeaderView.Stretch)
         self.users_to_create.horizontalHeader().setSectionResizeMode(
@@ -1472,16 +1472,16 @@ class AdminTool(QtWidgets.QMainWindow):
         ll.addWidget(self.users_to_create)
         layout.addWidget(list_group, 1)
 
-        btn_create = QtWidgets.QPushButton("👤  UTWÓRZ WSZYSTKIE KONTA NA LIŚCIE")
+        btn_create = QtWidgets.QPushButton("👤  CREATE ALL ACCOUNTS IN LIST")
         btn_create.setObjectName("btnGreen")
         btn_create.setMinimumHeight(42)
         btn_create.clicked.connect(self._create_all_users)
         layout.addWidget(btn_create)
 
-        self.tabs.addTab(tab, "➕  Nowe konta")
+        self.tabs.addTab(tab, "➕  New Accounts")
 
     # ===========================
-    # ZAKŁADKA: ZARZĄDZANIE KONTAMI
+    # TAB: ACCOUNT MANAGEMENT
     # ===========================
     def _build_tab_users_manage(self):
         tab = QtWidgets.QWidget()
@@ -1489,12 +1489,12 @@ class AdminTool(QtWidgets.QMainWindow):
         layout.setSpacing(8)
 
         info = QtWidgets.QLabel(
-            "Zaznacz konto na liście, a następnie użyj przycisków poniżej.")
+            "Select an account from the list, then use the buttons below.")
         info.setStyleSheet("color: #8b949e; font-size: 11px; padding: 4px;")
         layout.addWidget(info)
 
         self.existing_table = QtWidgets.QTableWidget(0, 3)
-        self.existing_table.setHorizontalHeaderLabels(["Login", "Grupy / Rola", "Folder domowy"])
+        self.existing_table.setHorizontalHeaderLabels(["Login", "Groups / Rola", "Folder domowy"])
         hv_ex = self.existing_table.horizontalHeader()
         hv_ex.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
         hv_ex.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
@@ -1504,22 +1504,22 @@ class AdminTool(QtWidgets.QMainWindow):
         self.existing_table.setAlternatingRowColors(True)
         layout.addWidget(self.existing_table, 1)
 
-        # Pasek przycisków
+        # Button bar
         btn_bar = QtWidgets.QHBoxLayout()
         btn_bar.setSpacing(8)
 
-        btn_re = QtWidgets.QPushButton("🔍  Odśwież")
+        btn_re = QtWidgets.QPushButton("🔍  Refresh")
         btn_re.clicked.connect(self._refresh_existing_users)
 
         btn_block = QtWidgets.QPushButton("🔒  Zablokuj / Odblokuj")
         btn_block.setObjectName("btnRed")
         btn_block.clicked.connect(self._toggle_block_account)
 
-        btn_chpass = QtWidgets.QPushButton("🔑  Zmień hasło")
+        btn_chpass = QtWidgets.QPushButton("🔑  Change password")
         btn_chpass.setObjectName("btnOrange")
         btn_chpass.clicked.connect(self._change_password_dialog)
 
-        btn_del = QtWidgets.QPushButton("🗑  Usuń konto")
+        btn_del = QtWidgets.QPushButton("🗑  Delete account")
         btn_del.setObjectName("btnRed")
         btn_del.clicked.connect(self._delete_account)
 
@@ -1530,10 +1530,10 @@ class AdminTool(QtWidgets.QMainWindow):
         btn_bar.addStretch()
         layout.addLayout(btn_bar)
 
-        self.tabs.addTab(tab, "👥  Zarządzanie kontami")
+        self.tabs.addTab(tab, "👥  Account Management")
 
     # ===========================
-    # ZAKŁADKA: ODZYSKIWANIE SYSTEMU
+    # TAB: SYSTEM RECOVERY
     # ===========================
     def _build_tab_recovery(self):
         tab = QtWidgets.QWidget()
@@ -1541,7 +1541,7 @@ class AdminTool(QtWidgets.QMainWindow):
         layout.setSpacing(12)
 
         # PUNKT PRZYWRACANIA
-        rp_group = QtWidgets.QGroupBox("PUNKT PRZYWRACANIA SYSTEMU")
+        rp_group = QtWidgets.QGroupBox("SYSTEM RESTORE POINT")
         rp_layout = QtWidgets.QVBoxLayout(rp_group)
 
         rp_info = QtWidgets.QLabel(
@@ -1553,15 +1553,15 @@ class AdminTool(QtWidgets.QMainWindow):
         rp_layout.addWidget(rp_info)
 
         rp_form = QtWidgets.QHBoxLayout()
-        rp_form.addWidget(QtWidgets.QLabel("Opis punktu:"))
+        rp_form.addWidget(QtWidgets.QLabel("Point description:"))
         self.rp_desc = QtWidgets.QLineEdit()
-        self.rp_desc.setPlaceholderText("np. Przed instalacja oprogramowania...")
-        self.rp_desc.setText("Punkt przywracania — Pro Admin Tool")
+        self.rp_desc.setPlaceholderText("e.g. Before software installation...")
+        self.rp_desc.setText("Restore point — Pro Admin Tool")
         rp_form.addWidget(self.rp_desc, 1)
         rp_layout.addLayout(rp_form)
 
         rp_type_row = QtWidgets.QHBoxLayout()
-        rp_type_row.addWidget(QtWidgets.QLabel("Typ punktu:"))
+        rp_type_row.addWidget(QtWidgets.QLabel("Point type:"))
         self.rp_type_combo = QtWidgets.QComboBox()
         self.rp_type_combo.addItems([
             "APPLICATION_INSTALL (0) — instalacja aplikacji",
@@ -1575,13 +1575,13 @@ class AdminTool(QtWidgets.QMainWindow):
         rp_layout.addLayout(rp_type_row)
 
         rp_btns = QtWidgets.QHBoxLayout()
-        btn_create_rp = QtWidgets.QPushButton("🛡  Utwórz punkt przywracania")
+        btn_create_rp = QtWidgets.QPushButton("🛡  Create restore point")
         btn_create_rp.setObjectName("btnGreen")
         btn_create_rp.setMinimumHeight(38)
         btn_create_rp.clicked.connect(self._create_restore_point)
-        btn_open_rp = QtWidgets.QPushButton("🔧  Otwórz przywracanie systemu")
+        btn_open_rp = QtWidgets.QPushButton("🔧  Open system restore")
         btn_open_rp.clicked.connect(lambda: subprocess.Popen(["rstrui.exe"]))
-        btn_sysprop = QtWidgets.QPushButton("⚙  Wlasciwosci systemu (ochrona)")
+        btn_sysprop = QtWidgets.QPushButton("⚙  System properties (protection)")
         btn_sysprop.clicked.connect(lambda: subprocess.Popen(["SystemPropertiesProtection.exe"]))
         rp_btns.addWidget(btn_create_rp)
         rp_btns.addWidget(btn_open_rp)
@@ -1595,7 +1595,7 @@ class AdminTool(QtWidgets.QMainWindow):
         layout.addWidget(rp_group)
 
         # DYSK ODZYSKIWANIA
-        rd_group = QtWidgets.QGroupBox("DYSK ODZYSKIWANIA (Recovery Drive)")
+        rd_group = QtWidgets.QGroupBox("RECOVERY DRIVE")
         rd_layout = QtWidgets.QVBoxLayout(rd_group)
 
         rd_info = QtWidgets.QLabel(
@@ -1606,14 +1606,14 @@ class AdminTool(QtWidgets.QMainWindow):
         rd_info.setStyleSheet("color: #8b949e; padding: 4px;")
         rd_layout.addWidget(rd_info)
 
-        rd_warn = QtWidgets.QLabel("⚠  UWAGA: Wszystkie dane na wybranym dysku USB zostana TRWALE USUNIETE!")
+        rd_warn = QtWidgets.QLabel("⚠  WARNING: All data on the selected USB drive will be PERMANENTLY DELETED!")
         rd_warn.setStyleSheet(
             "color: #ff7b72; font-weight: bold; padding: 6px 8px;"
             "background: #2d1515; border-radius: 4px;")
         rd_layout.addWidget(rd_warn)
 
         rd_btns = QtWidgets.QHBoxLayout()
-        btn_rd = QtWidgets.QPushButton("💾  Uruchom kreator dysku odzyskiwania")
+        btn_rd = QtWidgets.QPushButton("💾  Launch recovery drive wizard")
         btn_rd.setObjectName("btnBlue")
         btn_rd.setMinimumHeight(38)
         btn_rd.clicked.connect(self._launch_recovery_drive)
@@ -1623,26 +1623,26 @@ class AdminTool(QtWidgets.QMainWindow):
         layout.addWidget(rd_group)
 
         # NARZEDZIA DIAGNOSTYCZNE
-        diag_group = QtWidgets.QGroupBox("NARZEDZIA DIAGNOSTYCZNE I NAPRAWCZE")
+        diag_group = QtWidgets.QGroupBox("DIAGNOSTIC AND REPAIR TOOLS")
         diag_layout = QtWidgets.QGridLayout(diag_group)
         diag_layout.setSpacing(8)
 
         tools = [
-            ("💻  sfc /scannow",       "Skanowanie i naprawa plikow systemowych",
+            ("💻  sfc /scannow",       "Scan and repair system files",
              ["cmd", "/c", "start", "cmd", "/k", "sfc /scannow"]),
-            ("🔧  DISM /RestoreHealth", "Naprawa obrazu systemu Windows",
+            ("🔧  DISM /RestoreHealth", "Repair Windows image",
              ["cmd", "/c", "start", "cmd", "/k", "DISM /Online /Cleanup-Image /RestoreHealth"]),
-            ("📋  Zarzadzanie dyskami", "Otwórz diskmgmt.msc",
+            ("📋  Disk Management", "Open diskmgmt.msc",
              ["diskmgmt.msc"]),
-            ("🛡  Windows Defender",    "Skanowanie antywirusowe",
+            ("🛡  Windows Defender",    "Antivirus scan",
              ["cmd", "/c", "start", "ms-windows-defender:"]),
-            ("📊  Podglad zdarzen",     "Dzienniki systemu i bledow",
+            ("📊  Event Viewer",     "System and error logs",
              ["eventvwr.msc"]),
-            ("⚙  Konfiguracja systemu","msconfig — uslugi i uruchamianie",
+            ("⚙  System Configuration","msconfig — services and startup",
              ["msconfig"]),
-            ("📁  Czyszczenie dysku",   "cleanmgr — zwolnij miejsce",
+            ("📁  Disk Cleanup",   "cleanmgr — free up space",
              ["cleanmgr"]),
-            ("🔌  Menedzer urzadzen",   "devmgmt.msc",
+            ("🔌  Device Manager",   "devmgmt.msc",
              ["devmgmt.msc"]),
         ]
         for i, (label, tip, cmd) in enumerate(tools):
@@ -1654,8 +1654,8 @@ class AdminTool(QtWidgets.QMainWindow):
 
         layout.addWidget(diag_group)
         layout.addStretch()
-        self.tabs.addTab(tab, "🛡  Odzyskiwanie systemu")
-        # Zakładka ukryta — odkomentuj aby pokazać
+        self.tabs.addTab(tab, "🛡  System Recovery")
+        # Tab visible
         self.tabs.setTabVisible(self.tabs.count() - 1, True)
     # -----------------------------------------------------------------------
     # HELPERS
@@ -1711,7 +1711,7 @@ class AdminTool(QtWidgets.QMainWindow):
                 uname, _, _ = win32security.LookupAccountSid(None,
                     win32security.ConvertStringSidToSid(sid_str))
                 ntuser = None
-                for base in [r"C:\Users", r"C:\Użytkownicy"]:
+                for base in [r"C:\Users", r"C:\Users"]:
                     p = os.path.join(base, uname, "NTUSER.DAT")
                     if os.path.exists(p):
                         ntuser = p
@@ -1757,7 +1757,7 @@ class AdminTool(QtWidgets.QMainWindow):
                 uname, _, _ = win32security.LookupAccountSid(None,
                     win32security.ConvertStringSidToSid(sid_str))
                 ntuser = None
-                for base in [r"C:\Users", r"C:\Użytkownicy"]:
+                for base in [r"C:\Users", r"C:\Users"]:
                     p = os.path.join(base, uname, "NTUSER.DAT")
                     if os.path.exists(p):
                         ntuser = p
@@ -1798,9 +1798,9 @@ class AdminTool(QtWidgets.QMainWindow):
     def _gp_reg_query(self, vname):
         """Czyta stan zasady GP przez winreg.
         Zwraca: (exists: bool, value: int)
-        exists=False oznacza brak wartosci (Nie skonfigurowano w gpedit).
-        exists=True, value=0 oznacza Wylaczone.
-        exists=True, value=1 oznacza Wlaczone.
+        exists=False oznacza brak wartosci (Not Configured w gpedit).
+        exists=True, value=0 oznacza Disabled.
+        exists=True, value=1 oznacza Enabled.
         """
         try:
             key = winreg.OpenKey(
@@ -1894,7 +1894,7 @@ class AdminTool(QtWidgets.QMainWindow):
                 continue  # usun stary wpis
             new_entries.append(e)
 
-        # Dodaj nowy wpis jesli value nie jest None
+        # Add nowy wpis jesli value nie jest None
         if value is not None:
             key_enc   = (reg_key + "\x00").encode("utf-16-le")
             vname_enc = (vname   + "\x00").encode("utf-16-le")
@@ -1933,11 +1933,11 @@ class AdminTool(QtWidgets.QMainWindow):
         self._gp_reg_delete(value_name)
 
     def _toggle_gp(self, vname):
-        """Przelacza zasade: Wlaczone(1) <-> Wylaczone(0), jak gpedit."""
+        """Przelacza zasade: Enabled(1) <-> Disabled(0), jak gpedit."""
         exists, val = self._gp_reg_query(vname)
         new_val = 0 if (exists and val == 1) else 1
         self._gp_reg_write(vname, new_val)
-        stan = "Wlaczone" if new_val == 1 else "Wylaczone"
+        stan = "Enabled" if new_val == 1 else "Disabled"
         clr  = "#ff7b72" if new_val == 1 else "#e3b341"
         self._log(f"{vname}: {stan}", clr)
         self._read_global_cd()
@@ -2010,15 +2010,15 @@ class AdminTool(QtWidgets.QMainWindow):
             with open(pol_path, "wb") as f:
                 f.write(out)
         except Exception as ex:
-            self._log(f"Blad zapisu .pol: {ex}", "#ff7b72")
+            self._log(f"Error writing .pol: {ex}", "#ff7b72")
 
     # Stale dwie konfiguracje identyczne z gpedit
     _CD_CONFIGS = [
-        ("Konfiguracja komputera",
+        ("Computer Configuration",
          "HKLM",
          r"C:\Windows\System32\GroupPolicy\Machine\Registry.pol",
          ["Deny_Execute", "Deny_Read", "Deny_Write"]),
-        ("Konfiguracja użytkownika",
+        ("User Configuration",
          "HKCU",
          r"C:\Windows\System32\GroupPolicy\User\Registry.pol",
          ["Deny_Read", "Deny_Write"]),
@@ -2028,7 +2028,7 @@ class AdminTool(QtWidgets.QMainWindow):
         val = self._cd_query(hive_key, dtype)
         self._cd_write(hive_key, dtype, 0 if val == 1 else 1, pol_path)
         self._log(
-            f"{hive_key} {dtype}: {'Wlaczone' if val == 0 else 'Wylaczone'}",
+            f"{hive_key} {dtype}: {'Enabled' if val == 0 else 'Disabled'}",
             "#ff7b72" if val == 0 else "#7ee787")
         self._read_cd_policies()
 
@@ -2059,7 +2059,7 @@ class AdminTool(QtWidgets.QMainWindow):
             grp_l.setSpacing(8)
             for dtype in dtypes:
                 dlabel = self._cd_deny_labels[self._cd_deny_types.index(dtype)]
-                btn = QtWidgets.QPushButton(f"{dlabel}\nWyłączone")
+                btn = QtWidgets.QPushButton(f"{dlabel}\nDisabled")
                 btn.setFixedHeight(44)
                 btn.setStyleSheet(
                     "background:#2d333b; color:#8b949e; "
@@ -2073,12 +2073,12 @@ class AdminTool(QtWidgets.QMainWindow):
 
     def _cd_update_btn(self, btn, label, val):
         if val == 1:
-            btn.setText(f"{label}\nWłączone")
+            btn.setText(f"{label}\nEnabled")
             btn.setStyleSheet(
                 "background:#c0392b; color:white; "
                 "font-weight:bold; border-radius:4px;")
         else:
-            btn.setText(f"{label}\nWyłączone")
+            btn.setText(f"{label}\nDisabled")
             btn.setStyleSheet(
                 "background:#2d333b; color:#8b949e; "
                 "border:1px solid #444; border-radius:4px;")
@@ -2103,7 +2103,7 @@ class AdminTool(QtWidgets.QMainWindow):
         self._read_global_cd()
         self._read_cd_policies()
         self._refresh_existing_users()
-        self._log("Odswiezono wszystkie dane.", "#58a6ff")
+        self._log("All data refreshed.", "#58a6ff")
 
     def _get_local_groups(self):
         """Pobiera lokalne grupy z lista czlonkow."""
@@ -2199,9 +2199,9 @@ class AdminTool(QtWidgets.QMainWindow):
         for d in self._cd_row_data:
             d["cb_r"].setChecked(False)
             d["cb_w"].setChecked(False)
-        self._log("Odznaczono wszystkie blokady — kliknij Zapisz aby zatwierdzic.", "#e3b341")
+        self._log("Odznaczono wszystkie blokady — kliknij Save aby zatwierdzic.", "#e3b341")
 
-    # ── UŻYTKOWNICY ──────────────────────────────────────────────────────
+    # ── USERS ───────────────────────────────────────────────────────────
     def _add_user_row(self):
         row = self.users_to_create.rowCount()
         self.users_to_create.insertRow(row)
@@ -2214,14 +2214,14 @@ class AdminTool(QtWidgets.QMainWindow):
             "border-radius: 4px; padding: 3px;")
         self.users_to_create.setCellWidget(row, 0, login_w)
 
-        # Kolumna 1: Typ konta
+        # Kolumna 1: Account Type
         type_combo = QtWidgets.QComboBox()
-        type_combo.addItem("👤 Zwykły użytkownik", "user")
+        type_combo.addItem("👤 Standard User", "user")
         type_combo.addItem("🔑 Administrator", "admin")
         type_combo.setCurrentIndex(0)
         self.users_to_create.setCellWidget(row, 1, type_combo)
 
-        # Kolumna 2: Folder domowy (podgląd)
+        # Kolumna 2: Home folder (preview)
         preview_item = QtWidgets.QTableWidgetItem("—")
         preview_item.setFlags(preview_item.flags() & ~QtCore.Qt.ItemIsEditable)
         preview_item.setForeground(QtGui.QColor("#8b949e"))
@@ -2232,7 +2232,7 @@ class AdminTool(QtWidgets.QMainWindow):
             pi.setText(self._home_path(lw.text().strip()) if lw.text().strip() else "—"))
         self.users_to_create.setItem(row, 2, preview_item)
 
-        # Kolumna 3: Usuń
+        # Kolumna 3: Remove
         btn_del = QtWidgets.QPushButton("✕")
         btn_del.setObjectName("btnRed")
         btn_del.setFixedWidth(36)
@@ -2246,7 +2246,7 @@ class AdminTool(QtWidgets.QMainWindow):
         sender_btn = self.sender()
         if sender_btn:
             for r in range(self.users_to_create.rowCount()):
-                btn_widget = self.users_to_create.cellWidget(r, 3)  # kolumna 3 = Usuń
+                btn_widget = self.users_to_create.cellWidget(r, 3)  # kolumna 3 = Remove
                 if btn_widget is sender_btn:
                     self.users_to_create.removeRow(r)
                     return
@@ -2256,7 +2256,7 @@ class AdminTool(QtWidgets.QMainWindow):
     def _create_all_users(self):
         password = self.shared_pass.text()
         if not password:
-            QtWidgets.QMessageBox.warning(self, "Błąd", "Podaj hasło wspólne!")
+            QtWidgets.QMessageBox.warning(self, "Error", "Enter a shared password!")
             return
         rows = self.users_to_create.rowCount()
         if rows == 0:
@@ -2277,16 +2277,16 @@ class AdminTool(QtWidgets.QMainWindow):
             home = self._home_path(login)
 
             try:
-                # Krok 1: Utwórz folder domowy
+                # Step 1: Create home folder
                 if home and not os.path.exists(home):
                     os.makedirs(home, exist_ok=True)
 
-                # Krok 2: NetUserAdd poziom 1 — najprostszy i zawsze działa
-                # priv MUSI być USER_PRIV_USER (1) — Windows sam ustawia resztę
+                # Step 2: NetUserAdd level 1 — simplest and always works
+                # priv MUST be USER_PRIV_USER (1) — Windows sets the rest
                 info1 = {
                     'name':       login,
                     'password':   password,
-                    'priv':       1,          # USER_PRIV_USER — hardcoded, win32netcon może miec zla wartosc
+                    'priv':       1,          # USER_PRIV_USER — hardcoded, win32netcon may have wrong value
                     'home_dir':   home,
                     'comment':    '',
                     'flags':      0x0200 | 0x0001,  # UF_NORMAL_ACCOUNT | UF_SCRIPT
@@ -2294,25 +2294,25 @@ class AdminTool(QtWidgets.QMainWindow):
                 }
                 win32net.NetUserAdd(None, 1, info1)
 
-                # Krok 3: Wymuś zmianę hasła (poziom 1003 nie ma password_expired,
-                #         używamy poziomu 3 tylko do ustawienia tego pola)
+                # Step 3: Force password change (level 1003 has no password_expired,
+                #         using level 3 only to set this field)
                 if force:
                     try:
                         info3 = win32net.NetUserGetInfo(None, login, 3)
                         info3['password_expired'] = 1
                         win32net.NetUserSetInfo(None, login, 3, info3)
                     except Exception as ef:
-                        self._log(f"  ⚠ Nie można ustawić wymuszenia hasła dla '{login}': {ef}", "#e3b341")
+                        self._log(f"  ⚠ Cannot set password enforcement for '{login}': {ef}", "#e3b341")
 
-                # Krok 4: Zabezpiecz folder domowy — tylko właściciel + SYSTEM
+                # Step 4: Secure home folder — owner + SYSTEM only
                 if home and os.path.exists(home):
                     try:
                         secure_home_folder(home, login)
                         self._log(f"  🔒 Folder domowy zabezpieczony: {home}", "#58a6ff")
                     except Exception as es:
-                        self._log(f"  ⚠ Nie zabezpieczono folderu: {es}", "#e3b341")
+                        self._log(f"  ⚠ Cannot secure folder: {es}", "#e3b341")
 
-                # Krok 5: Dodaj do grupy Administratorzy lub Użytkownicy
+                # Krok 5: Add do grupy Administratorzy lub Users
                 if is_admin:
                     try:
                         win32net.NetLocalGroupAddMembers(None, "Administratorzy", 3,
@@ -2322,34 +2322,34 @@ class AdminTool(QtWidgets.QMainWindow):
                             win32net.NetLocalGroupAddMembers(None, "Administrators", 3,
                                 [{'domainandname': login}])
                         except Exception as eg:
-                            self._log(f"  ⚠ Nie dodano do Administratorzy: {eg}", "#e3b341")
+                            self._log(f"  ⚠ Cannot add to Administrators: {eg}", "#e3b341")
                 else:
-                    # Dodaj do grupy Użytkownicy (może już być automatycznie — ale lepiej jawnie)
+                    # Add to Users group (may already be automatic — but explicit is safer)
                     try:
-                        win32net.NetLocalGroupAddMembers(None, "Użytkownicy", 3,
+                        win32net.NetLocalGroupAddMembers(None, "Users", 3,
                             [{'domainandname': login}])
                     except Exception:
                         try:
                             win32net.NetLocalGroupAddMembers(None, "Users", 3,
                                 [{'domainandname': login}])
                         except Exception:
-                            pass  # Brak grupy Użytkownicy — OK, konto i tak istnieje
+                            pass  # Brak grupy Users — OK, konto i tak istnieje
 
-                typ_str = "Administrator" if is_admin else "Użytkownik"
-                self._log(f"✅ Utworzono konto [{typ_str}]: {login} → {home}", "#7ee787")
+                typ_str = "Administrator" if is_admin else "User"
+                self._log(f"✅ Account created [{typ_str}]: {login} → {home}", "#7ee787")
                 created += 1
 
             except win32net.error as e:
                 if e.args[0] == 2224:
-                    self._log(f"⚠ Konto '{login}' już istnieje — pominięto.", "#e3b341")
+                    self._log(f"⚠ Account '{login}' already exists — skipped.", "#e3b341")
                 else:
-                    self._log(f"❌ Błąd '{login}': {e}", "#ff7b72")
+                    self._log(f"❌ Error '{login}': {e}", "#ff7b72")
                     errors += 1
             except Exception as e:
-                self._log(f"❌ Błąd '{login}': {e}", "#ff7b72")
+                self._log(f"❌ Error '{login}': {e}", "#ff7b72")
                 errors += 1
 
-        msg = f"Zakończono: {created} kont utworzono, {errors} błędów."
+        msg = f"Completed: {created} accounts created, {errors} errors."
         self._log(msg, "#7ee787" if errors == 0 else "#e3b341")
         QtWidgets.QMessageBox.information(self, "Wynik", msg)
         self.users_to_create.setRowCount(0)
@@ -2378,17 +2378,17 @@ class AdminTool(QtWidgets.QMainWindow):
                     f"🔒 {name}" if is_disabled else name)
                 if is_disabled:
                     name_item.setForeground(QtGui.QColor("#ff7b72"))
-                    name_item.setToolTip("Konto ZABLOKOWANE")
+                    name_item.setToolTip("Account ZABLOKOWANE")
                 self.existing_table.setItem(row, 0, name_item)
                 self.existing_table.setItem(row, 1, QtWidgets.QTableWidgetItem(groups))
                 self.existing_table.setItem(row, 2, QtWidgets.QTableWidgetItem(home))
         except Exception as e:
-            self._log(f"Błąd pobierania kont: {e}", "#ff7b72")
+            self._log(f"Error pobierania kont: {e}", "#ff7b72")
 
     def _get_selected_account(self) -> str:
         rows = self.existing_table.selectedItems()
         if not rows:
-            QtWidgets.QMessageBox.warning(self, "Brak zaznaczenia", "Zaznacz konto na liście.")
+            QtWidgets.QMessageBox.warning(self, "No selection", "Select an account from the list.")
             return ""
         name = self.existing_table.item(rows[0].row(), 0).text()
         return name.replace("🔒 ", "").strip()
@@ -2401,25 +2401,25 @@ class AdminTool(QtWidgets.QMainWindow):
             info = win32net.NetUserGetInfo(None, name, 1)
             flags = info.get('flags', 0)
             is_disabled = bool(flags & win32netcon.UF_ACCOUNTDISABLE)
-            action = "Odblokować" if is_disabled else "Zablokować"
+            action = "Unlock" if is_disabled else "Lock"
             confirm = QtWidgets.QMessageBox.question(
                 self, f"{action} konto",
                 f"{action} konto: {name}?" +
-                ("" if is_disabled else "\n\nUżytkownik nie będzie mógł się zalogować."),
+                ("" if is_disabled else "\n\nThe user will not be able to log in."),
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
             if confirm != QtWidgets.QMessageBox.Yes:
                 return
             if is_disabled:
                 info['flags'] = flags & ~win32netcon.UF_ACCOUNTDISABLE
                 win32net.NetUserSetInfo(None, name, 1, info)
-                self._log(f"✅ Odblokowano konto: {name}", "#7ee787")
+                self._log(f"✅ Account unlocked: {name}", "#7ee787")
             else:
                 info['flags'] = flags | win32netcon.UF_ACCOUNTDISABLE
                 win32net.NetUserSetInfo(None, name, 1, info)
-                self._log(f"🔒 Zablokowano konto: {name}", "#e3b341")
+                self._log(f"🔒 Account locked: {name}", "#e3b341")
             self._refresh_existing_users()
         except Exception as e:
-            self._log(f"Błąd zmiany stanu konta '{name}': {e}", "#ff7b72")
+            self._log(f"Error zmiany stanu konta '{name}': {e}", "#ff7b72")
 
     def _change_password_dialog(self):
         name = self._get_selected_account()
@@ -2427,32 +2427,32 @@ class AdminTool(QtWidgets.QMainWindow):
             return
 
         dlg = QtWidgets.QDialog(self)
-        dlg.setWindowTitle(f"Zmień hasło — {name}")
+        dlg.setWindowTitle(f"Change password — {name}")
         dlg.setMinimumWidth(420)
         dlg.setStyleSheet(DARK_STYLE)
         lay = QtWidgets.QVBoxLayout(dlg)
         lay.setSpacing(10)
-        lay.addWidget(QtWidgets.QLabel(f"Nowe hasło dla konta:  <b>{name}</b>"))
+        lay.addWidget(QtWidgets.QLabel(f"New password for account:  <b>{name}</b>"))
 
         pass_edit = QtWidgets.QLineEdit()
         pass_edit.setEchoMode(QtWidgets.QLineEdit.Password)
-        pass_edit.setPlaceholderText("Nowe hasło...")
+        pass_edit.setPlaceholderText("New password...")
         lay.addWidget(pass_edit)
 
-        btn_eye = QtWidgets.QPushButton("👁  Pokaż hasło")
+        btn_eye = QtWidgets.QPushButton("👁  Show password")
         btn_eye.setCheckable(True)
         btn_eye.toggled.connect(lambda c: pass_edit.setEchoMode(
             QtWidgets.QLineEdit.Normal if c else QtWidgets.QLineEdit.Password))
         lay.addWidget(btn_eye)
 
-        cb_force = QtWidgets.QCheckBox("Wymuś zmianę hasła przy następnym logowaniu")
+        cb_force = QtWidgets.QCheckBox("Force password change at next login")
         cb_force.setChecked(True)
         lay.addWidget(cb_force)
 
         btn_row2 = QtWidgets.QHBoxLayout()
-        btn_ok2 = QtWidgets.QPushButton("✅ Zmień hasło")
+        btn_ok2 = QtWidgets.QPushButton("✅ Change Password")
         btn_ok2.setObjectName("btnGreen")
-        btn_cancel2 = QtWidgets.QPushButton("Anuluj")
+        btn_cancel2 = QtWidgets.QPushButton("Cancel")
         btn_ok2.clicked.connect(dlg.accept)
         btn_cancel2.clicked.connect(dlg.reject)
         btn_row2.addStretch()
@@ -2465,13 +2465,13 @@ class AdminTool(QtWidgets.QMainWindow):
         new_pass = pass_edit.text()
         force = cb_force.isChecked()
         if not new_pass:
-            QtWidgets.QMessageBox.warning(self, "Błąd", "Hasło nie może być puste!")
+            QtWidgets.QMessageBox.warning(self, "Error", "Password cannot be empty!")
             return
         try:
             win32net.NetUserSetInfo(None, name, 1003, {'password': new_pass})
         except Exception as e:
-            self._log(f"Błąd zmiany hasła '{name}': {e}", "#ff7b72")
-            QtWidgets.QMessageBox.critical(self, "Błąd", f"Nie można zmienić hasła:\n{e}")
+            self._log(f"Error changing password '{name}': {e}", "#ff7b72")
+            QtWidgets.QMessageBox.critical(self, "Error", f"Cannot change password:\n{e}")
             return
         if force:
             try:
@@ -2479,12 +2479,12 @@ class AdminTool(QtWidgets.QMainWindow):
                 info3['password_expired'] = 1
                 win32net.NetUserSetInfo(None, name, 3, info3)
             except Exception as e:
-                self._log(f"Nie można ustawić wymuszenia: {e}", "#e3b341")
+                self._log(f"Cannot set enforcement: {e}", "#e3b341")
         self._log(
-            f"✅ Zmieniono hasło dla konta: {name}"
+            f"✅ Password changed for account: {name}"
             + (" (wymuszona zmiana przy logowaniu)" if force else ""), "#7ee787")
         QtWidgets.QMessageBox.information(
-            self, "OK", f"Hasło dla konta '{name}' zostało zmienione.")
+            self, "OK", f"Password for account '{name}' has been changed.")
 
 
 
@@ -2509,7 +2509,7 @@ class AdminTool(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.critical(self, "Blad", str(e))
 
     def _create_restore_point(self):
-        desc = self.rp_desc.text().strip() or "Punkt przywracania — Pro Admin Tool"
+        desc = self.rp_desc.text().strip() or "Restore point — Pro Admin Tool"
         self.rp_status.setText("Tworzenie punktu przywracania...")
         self.rp_status.setStyleSheet("color: #e3b341; font-size: 12px; padding: 4px;")
         QtWidgets.QApplication.processEvents()
@@ -2534,7 +2534,7 @@ class AdminTool(QtWidgets.QMainWindow):
             self._log(f"Blad punktu przywracania: {e}", "#ff7b72")
             QtWidgets.QMessageBox.warning(
                 self, "Blad tworzenia punktu przywracania",
-                "Nie udalo sie utworzyc punktu przywracania. "
+                "No udalo sie utworzyc punktu przywracania. "
                 "Upewnij sie ze ochrona systemu jest wlaczona: "
                 "Panel sterowania > System > Ochrona systemu > Konfiguruj")
 
@@ -2552,7 +2552,7 @@ class AdminTool(QtWidgets.QMainWindow):
         except Exception as e:
             self._log(f"Blad: {e}", "#ff7b72")
             QtWidgets.QMessageBox.critical(self, "Blad",
-                f"Nie mozna uruchomic kreatora: {e}")
+                f"No mozna uruchomic kreatora: {e}")
 
     def _run_tool(self, cmd: list):
         try:
