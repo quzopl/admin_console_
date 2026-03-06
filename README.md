@@ -18,7 +18,7 @@ Zaawansowane narzędzie administracyjne dla systemu Windows z graficznym interfe
 
 ```bash
 pip install -r requirements.txt
-python admin_tool_FINAL.py
+python admin_tool_PL.py
 ```
 
 ### ✨ Funkcje
@@ -103,7 +103,7 @@ Advanced Windows administration tool with a graphical user interface (GUI) for m
 
 ```bash
 pip install -r requirements.txt
-python admin_tool_FINAL.py
+python admin_tool_EN.py
 ```
 
 ### ✨ Features
