@@ -1656,7 +1656,7 @@ class AdminTool(QtWidgets.QMainWindow):
         layout.addStretch()
         self.tabs.addTab(tab, "🛡  Odzyskiwanie systemu")
         # Zakładka ukryta — odkomentuj aby pokazać
-        self.tabs.setTabVisible(self.tabs.count() - 1, False)
+        self.tabs.setTabVisible(self.tabs.count() - 1, True)
     # -----------------------------------------------------------------------
     # HELPERS
     # -----------------------------------------------------------------------
